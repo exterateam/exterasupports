@@ -26,6 +26,15 @@ CREATE TABLE IF NOT EXISTS tickets (
     status TEXT DEFAULT 'open'
 )
 """)
+cur.execute("""
+CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id INTEGER,
+    sender TEXT,
+    text TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""")
 conn.commit()
 
 # --- Помощник для статусов ---
@@ -43,12 +52,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id in ADMIN_IDS:
         text = (
             "👋 *Привет, администратор!*\n\n"
-            "*Команды для управления тикетами:*\n"
+            "💼 *Команды для управления тикетами:*\n"
             "📄 /alltickets — показать все тикеты\n"
             "✅ /close <id> — закрыть тикет\n"
-            "*Команды для пользователей:*\n"
-            "🆕 /new <текст> — создать новый тикет\n"
-            "📋 /mytickets — посмотреть свои тикеты\n"
+            "💬 /reply <id> <текст> — ответить пользователю\n"
             "ℹ️ /start — показать эту инструкцию\n"
         )
     else:
@@ -70,6 +77,9 @@ async def new_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 (update.effective_user.id, update.effective_user.username, message))
     conn.commit()
     ticket_id = cur.lastrowid
+    cur.execute("INSERT INTO messages (ticket_id, sender, text) VALUES (?, ?, ?)",
+                (ticket_id, 'user', message))
+    conn.commit()
     await update.message.reply_text(f"✅ Тикет #{ticket_id} создан!")
     for admin_id in ADMIN_IDS:
         try:
@@ -111,6 +121,34 @@ async def close_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
     await update.message.reply_text(f"🔴 Тикет #{ticket_id} закрыт.")
 
+async def reply_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ADMIN_IDS:
+        await update.message.reply_text("❌ Нет доступа.")
+        return
+    if len(context.args) < 2:
+        await update.message.reply_text("⚠️ Используй: /reply <id> <текст>")
+        return
+    ticket_id = context.args[0]
+    reply_text = " ".join(context.args[1:])
+    # Найдём тикет и пользователя
+    cur.execute("SELECT user_id FROM tickets WHERE id=?", (ticket_id,))
+    row = cur.fetchone()
+    if not row:
+        await update.message.reply_text("❌ Тикет не найден.")
+        return
+    user_id = row[0]
+    # Отправка сообщения пользователю
+    try:
+        await context.bot.send_message(user_id, f"💬 Ответ админа по тикету #{ticket_id}:\n{reply_text}")
+    except Exception:
+        await update.message.reply_text("❌ Не удалось отправить сообщение пользователю.")
+        return
+    # Сохраняем сообщение в базе
+    cur.execute("INSERT INTO messages (ticket_id, sender, text) VALUES (?, ?, ?)",
+                (ticket_id, 'admin', reply_text))
+    conn.commit()
+    await update.message.reply_text(f"✅ Ответ отправлен пользователю.")
+
 # --- Запуск ---
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
@@ -120,6 +158,7 @@ def main():
     app.add_handler(CommandHandler("mytickets", my_tickets))
     app.add_handler(CommandHandler("alltickets", all_tickets))
     app.add_handler(CommandHandler("close", close_ticket))
+    app.add_handler(CommandHandler("reply", reply_ticket))
 
     app.run_polling()
 
