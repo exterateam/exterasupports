@@ -31,9 +31,9 @@ BOT_TOKEN=твой_токен_от_BotFather
 ADMIN_IDS=123456789
 ```
 
-BOT_TOKEN — токен, который выдал @BotFather
+- BOT_TOKEN — токен, который выдал @BotFather
 
-ADMIN_IDS — ID администраторов через запятую (узнать можно у @userinfobot
+- ADMIN_IDS — ID администраторов через запятую (узнать можно у @userinfobot
 
 ### 4. Запустить
 ```bash
